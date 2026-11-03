@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ client_name }} report, {{ month }}</title>
+<style>
+  @page {
+    size: A4;
+    margin: 16mm 15mm 18mm;
+    @bottom-left { content: element(footer); }
+    @bottom-right { content: counter(page) " / " counter(pages); font-size: 8pt; color: #6b6b6b; }
+  }
+  body { font-family: "Helvetica Neue", Helvetica, Arial, "DejaVu Sans", sans-serif; color: #0a0a0a; font-size: 10pt; margin: 0; }
+  .footer { position: running(footer); font-size: 8pt; color: #6b6b6b; }
+  .page { break-after: page; }
+  .page:last-child { break-after: auto; }
+  .brand { display: flex; align-items: center; justify-content: space-between; border-bottom: 2pt solid {{ branding.accent_hex }}; padding-bottom: 6pt; margin-bottom: 18pt; }
+  .brand img { max-height: 28pt; max-width: 160pt; }
+  .brand .agency { font-weight: 700; font-size: 11pt; }
+  h1 { font-size: 26pt; margin: 0 0 4pt; }
+  .month { color: #6b6b6b; font-size: 13pt; margin: 0 0 22pt; }
+  h2 { font-size: 16pt; margin: 0 0 10pt; }
+  h3 { font-size: 11pt; margin: 6pt 0 4pt; }
+  .stat { border-left: 4pt solid {{ branding.accent_hex }}; padding: 6pt 0 6pt 12pt; margin-bottom: 14pt; }
+  .stat .label { text-transform: uppercase; letter-spacing: 0.08em; font-size: 8.5pt; color: #6b6b6b; font-weight: 700; }
+  .stat .value { font-size: 30pt; font-weight: 800; line-height: 1.1; }
+  .stat .sentence { font-size: 12pt; }
+  img.chart { width: 100%; margin-bottom: 10pt; }
+  .empty { color: #6b6b6b; font-style: italic; margin: 8pt 0 16pt; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 12pt; font-size: 8.5pt; }
+  th { text-align: left; color: #6b6b6b; font-weight: 700; border-bottom: 1pt solid #dedede; padding: 3pt 4pt; }
+  td { border-bottom: 0.5pt solid #eeeeee; padding: 3pt 4pt; }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  td.key { word-break: break-all; }
+</style>
+</head>
+<body>
+<div class="footer">{{ branding.footer or branding.agency_name }}</div>
+
+<section class="page">
+  <div class="brand">
+    {% if logo_uri %}<img src="{{ logo_uri }}" alt="">{% endif %}
+    <span class="agency">{{ branding.agency_name }}</span>
+  </div>
+  <h1>{{ client_name }}</h1>
+  <p class="month">Monthly report, {{ month }}</p>
+  {% for h in headlines %}
+  <div class="stat">
+    <div class="label">{{ h.label }}</div>
+    <div class="value">{{ "{:,}".format(h.value) }}</div>
+    <div class="sentence">{{ h.sentence }}</div>
+  </div>
+  {% endfor %}
+</section>
+
+<section class="page">
+  <h2>Website traffic</h2>
+  {% if channels_png %}<img class="chart" src="{{ channels_png }}" alt="">{% else %}<p class="empty">No sessions recorded this month.</p>{% endif %}
+  {% if sessions_png %}<img class="chart" src="{{ sessions_png }}" alt="">{% else %}<p class="empty">No sessions recorded in the last 13 months.</p>{% endif %}
+</section>
+
+<section class="page">
+  <h2>Google search</h2>
+  {% if clicks_png %}<img class="chart" src="{{ clicks_png }}" alt="">{% else %}<p class="empty">No search clicks recorded in the last 13 months.</p>{% endif %}
+  {% for title, column, rows in [("Top search queries", "Query", gsc.top_queries), ("Top pages", "Page", gsc.top_pages)] %}
+  <h3>{{ title }}</h3>
+  {% if rows %}
+  <table>
+    <tr><th>{{ column }}</th><th class="num">Clicks</th><th class="num">Impressions</th><th class="num">CTR</th><th class="num">Avg. position</th></tr>
+    {% for r in rows %}
+    <tr>
+      <td class="key">{{ r.key }}</td>
+      <td class="num">{{ "{:,}".format(r.clicks) }}</td>
+      <td class="num">{{ "{:,}".format(r.impressions) }}</td>
+      <td class="num">{{ "%.1f"|format(r.ctr * 100) }}%</td>
+      <td class="num">{{ "%.1f"|format(r.position) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="empty">No data this month.</p>{% endif %}
+  {% endfor %}
+</section>
+</body>
+</html>
