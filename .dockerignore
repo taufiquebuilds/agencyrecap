@@ -5,3 +5,6 @@ tests
 test-image
 docs
 .env
+.superpowers
+.pytest_cache
+**/__pycache__

@@ -35,7 +35,16 @@ The login page locks an IP address out after 5 wrong passwords in 15 minutes. Be
 FORWARDED_ALLOW_IPS=<your proxy's IP address>
 ```
 
-Use `*` only when the container can be reached through the proxy alone (for example, you do not publish port 8000 to the internet). The app already reads these headers; this setting says whose headers to believe. Then run `docker compose up -d` again.
+If the proxy runs on the same server, the address the app sees is the Docker bridge gateway, not the server's public IP. It is often `172.17.0.1` (`docker network inspect bridge` shows it). Use that address instead.
+
+Use `*` only when nothing but the proxy can reach port 8000. The compose file publishes port 8000 on all network interfaces, so first change its port line in `docker-compose.yml` to:
+
+```yaml
+ports:
+  - "127.0.0.1:8000:8000"
+```
+
+Then set `FORWARDED_ALLOW_IPS=*`. The app already reads these headers; this setting says whose headers to believe. Then run `docker compose up -d` again.
 
 ## Google setup (about 10 minutes, once)
 
@@ -73,7 +82,8 @@ When you click **Connect Google**, Google shows a list of permissions with a tic
 uv sync
 export DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib   # macOS: lets WeasyPrint find pango
 uv run pytest
-uv run --env-file .env uvicorn clientreport.main:app --reload
+# DATA_DIR=./data keeps local data in ./data (Docker uses /data)
+DATA_DIR=./data uv run --env-file .env uvicorn clientreport.main:app --reload
 ```
 
 ## Licence
