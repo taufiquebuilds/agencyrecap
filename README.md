@@ -1,6 +1,10 @@
-# clientreport
+# agencyrecap
+
+![agencyrecap: monthly client reports that send themselves](docs/images/cover.png)
 
 Open-source monthly client reports for agencies. Connect Google Analytics 4 and Search Console once, add your clients, and each client gets a branded PDF report by email every month. Self-hosted and free for any number of clients.
+
+![How it works: connect Google, add clients, reports send themselves](docs/images/how-it-works.png)
 
 ## What a client gets
 
@@ -9,6 +13,22 @@ An email on the day you choose, with three headline numbers (sessions, key event
 1. Summary: the three numbers, each with a one-line finding.
 2. Website traffic: sessions by channel and a 13-month trend.
 3. Google search: clicks trend, top 10 search queries and top 10 pages.
+
+| Summary | Website traffic | Google search |
+|---|---|---|
+| ![Report page 1: summary](docs/images/report-page-1.png) | ![Report page 2: website traffic](docs/images/report-page-2.png) | ![Report page 3: Google search](docs/images/report-page-3.png) |
+
+The example uses made-up data for a fictional client. Your logo, accent colour and footer replace the ones shown.
+
+## The dashboard
+
+One page lists every client, whether this month's report went out, and buttons to preview or send now.
+
+![Dashboard with four clients and their report status](docs/images/dashboard.png)
+
+| Add or edit a client | Settings |
+|---|---|
+| ![Client form with GA4 property, Search Console site and send day](docs/images/client-form.png) | ![Settings with Google connection, logo, colour and emails](docs/images/settings.png) |
 
 ## Run it
 
