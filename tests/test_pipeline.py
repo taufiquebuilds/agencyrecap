@@ -7,7 +7,7 @@ from fakes import FakeHttp, FakeMailer
 from sqlmodel import Session
 
 from clientreport.connectors.base import GoogleAuthError, SourceError
-from clientreport.db import Client, GoogleConnection, get_agency, get_google, make_engine
+from clientreport.db import Client, GoogleConnection, ReportRun, get_agency, get_google, make_engine
 from clientreport.pipeline import Deps, send_report
 
 
@@ -105,3 +105,50 @@ def test_unexpected_error_holds_and_counts_attempt(env, caplog):
     assert "rows" in run.last_error
     assert mailer.sent == []
     assert "Unexpected error building report" in caplog.text
+
+
+def test_owner_alert_failure_does_not_escape(env, caplog):
+    session, client, tmp = env
+    client.name = "Acme\nLtd"  # a newline in the subject makes build_message raise ValueError
+    session.add(client)
+    session.commit()
+    mailer = FakeMailer()
+    d = deps(tmp, FakeHttp(fail=SourceError("GSC 500"), fail_on="searchAnalytics"), mailer)
+    statuses = [send_report(session, client, "2026-10", d).status for _ in range(3)]
+    assert statuses == ["held", "held", "failed"]
+    assert mailer.sent == []
+    assert "owner alert" in caplog.text
+
+
+def test_failed_manual_resend_keeps_sent_month_sent(env):
+    session, client, tmp = env
+    mailer = FakeMailer()
+    first = send_report(session, client, "2026-10", deps(tmp, FakeHttp(), mailer))
+    sent_at, pdf_path = first.sent_at, first.pdf_path
+    assert len(mailer.sent) == 1
+    failing = deps(tmp, FakeHttp(fail=SourceError("GSC 500"), fail_on="searchAnalytics"), mailer)
+    run = send_report(session, client, "2026-10", failing, manual=True)
+    assert run.status == "sent"
+    assert run.sent_at == sent_at
+    assert run.pdf_path == pdf_path
+    assert "GSC 500" in run.last_error
+    assert len(mailer.sent) == 1  # no second client email, no owner alert
+    # the scheduler skips a sent month, so the client is never sent a duplicate
+    send_report(session, client, "2026-10", deps(tmp, FakeHttp(), mailer))
+    assert len(mailer.sent) == 1
+
+
+def test_session_stays_usable_after_db_error(env):
+    session, client, tmp = env
+
+    def broken_http(s):
+        s.add(ReportRun(client_id=client.id, period="2026-10"))  # duplicates the run row
+        s.flush()  # raises IntegrityError and leaves the session needing a rollback
+        return FakeHttp()
+
+    d = Deps(data_dir=tmp, from_email="reports@agency.com", http_factory=broken_http,
+             send_mail=FakeMailer(), today=lambda: date(2026, 11, 4))
+    run = send_report(session, client, "2026-10", d)
+    assert run.status == "held"
+    assert run.attempts == 1
+    assert session.get(ReportRun, run.id).status == "held"

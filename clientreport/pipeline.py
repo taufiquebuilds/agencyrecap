@@ -97,6 +97,7 @@ def send_report(session: Session, client: Client, period: str, deps: Deps, manua
     run = _get_run(session, client.id, period)
     if run.status == "sent" and not manual:
         return run
+    was_sent = run.status == "sent"  # a manual re-send of a delivered month
     if manual:
         run.attempts = 0
 
@@ -108,12 +109,20 @@ def send_report(session: Session, client: Client, period: str, deps: Deps, manua
         deps.send_mail(client_email(get_agency(session), client, period, report.headlines, report.pdf,
                                     deps.from_email))
     except Exception as exc:  # SourceError and OSError (SMTP) are expected; anything else is a bug or bad data
+        session.rollback()  # a database error mid-try leaves the session unusable until rolled back
+        session.refresh(run)  # rollback expired run and discarded the manual attempts reset
         if not isinstance(exc, (SourceError, OSError)):
             logger.exception("Unexpected error building report for client %s, %s", client.id, period)
         if isinstance(exc, GoogleAuthError):
             mark_google_broken(session, str(exc))
-        run.attempts += 1
         run.last_error = str(exc) or exc.__class__.__name__
+        if was_sent:  # the month was already delivered: record the error, keep it sent, no alert
+            session.add(run)
+            session.commit()
+            return run
+        if manual:
+            run.attempts = 0
+        run.attempts += 1
         run.status = "failed" if run.attempts >= MAX_ATTEMPTS else "held"
         session.add(run)
         session.commit()
@@ -121,8 +130,8 @@ def send_report(session: Session, client: Client, period: str, deps: Deps, manua
         if run.status == "failed" and agency.owner_email:
             try:
                 deps.send_mail(alert_email(agency, client, run, deps.from_email))
-            except OSError:
-                pass  # the dashboard still shows the failure
+            except Exception:  # the dashboard still shows the failure; never abort the scheduler loop
+                logger.exception("Could not send the owner alert for client %s, %s", client.id, period)
         return run
 
     run.status = "sent"
