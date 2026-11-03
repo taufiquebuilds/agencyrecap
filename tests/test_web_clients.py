@@ -143,6 +143,21 @@ def test_send_now_asks_before_sending_twice(web, mailer):
     assert len(mailer.sent) == 2
 
 
+def test_send_now_does_not_resend_a_month_the_scheduler_just_sent(web, mailer, monkeypatch):
+    from clientreport.routes import clients as clients_routes
+
+    web.post("/clients", data=GOOD)
+    real = clients_routes.send_report
+
+    def scheduler_wins_the_race(session, client, period, deps, manual=False, force=False):
+        real(session, client, period, deps)  # the 07:00 run sends between the page check and our send
+        return real(session, client, period, deps, manual, force)
+
+    monkeypatch.setattr(clients_routes, "send_report", scheduler_wins_the_race)
+    assert web.post("/clients/1/send", follow_redirects=False).status_code == 303
+    assert len(mailer.sent) == 1
+
+
 def test_unknown_client(web):
     assert web.get("/clients/99/edit").status_code == 404
     assert web.post("/clients/99").status_code == 404

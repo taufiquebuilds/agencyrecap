@@ -149,7 +149,9 @@ async def send_now(request: Request, client_id: int, session: Session = Depends(
     run = session.exec(
         select(ReportRun).where(ReportRun.client_id == client.id, ReportRun.period == period)
     ).first()
-    if run is not None and run.status == "sent" and form.get("confirm") != "yes":
+    confirmed = form.get("confirm") == "yes"
+    if run is not None and run.status == "sent" and not confirmed:
         return render(request, "confirm_send.html", client=client, month=label(period), run=run)
-    await run_in_threadpool(send_report, session, client, period, deps, True)
+    # force only when the admin confirmed; a month that became sent in the meantime is left alone
+    await run_in_threadpool(send_report, session, client, period, deps, True, confirmed)
     return RedirectResponse("/", status_code=303)

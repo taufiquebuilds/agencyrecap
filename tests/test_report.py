@@ -1,10 +1,13 @@
 from io import BytesIO
 
+import matplotlib.pyplot as plt
+import pytest
+
 from fakes import FakeHttp
 from pypdf import PdfReader
 
 from clientreport.connectors import ga4, gsc
-from clientreport.report import charts
+from clientreport.report import chart_style, charts, render
 from clientreport.report.render import Branding, render_report
 
 BRANDING = Branding("Our Agency", "", "#1f7a4d", "Our Agency · hello@agency.com")
@@ -46,3 +49,52 @@ def test_report_with_no_data_still_renders():
     report = render_report("Acme Ltd", "2026-10", g, s, BRANDING)
     assert len(PdfReader(BytesIO(report.pdf)).pages) == 3
     assert "No sessions recorded this month." in report.html
+
+
+def test_render_report_draws_charts_while_holding_the_render_lock(monkeypatch):
+    g, s = sample()
+    seen = []
+    real_channels, real_trend = charts.channels_chart, charts.trend_chart
+
+    def channels(*args):
+        seen.append(render._render_lock.locked())
+        return real_channels(*args)
+
+    def trend(*args):
+        seen.append(render._render_lock.locked())
+        return real_trend(*args)
+
+    monkeypatch.setattr(charts, "channels_chart", channels)
+    monkeypatch.setattr(charts, "trend_chart", trend)
+    render_report("Acme Ltd", "2026-10", g, s, BRANDING)
+    assert seen == [True, True, True]
+    assert not render._render_lock.locked()
+
+
+def test_render_lock_is_released_when_rendering_fails(monkeypatch):
+    g, s = sample()
+
+    def boom(*args):
+        raise RuntimeError("chart exploded")
+
+    monkeypatch.setattr(charts, "channels_chart", boom)
+    with pytest.raises(RuntimeError):
+        render_report("Acme Ltd", "2026-10", g, s, BRANDING)
+    assert not render._render_lock.locked()
+
+
+@pytest.mark.parametrize("draw", [
+    lambda g: charts.channels_chart(g.channels, "#1f7a4d", "t", "k"),
+    lambda g: charts.trend_chart(g.trend, "#1f7a4d", "t", "k"),
+])
+def test_chart_figure_is_closed_when_styling_raises(monkeypatch, draw):
+    g, _ = sample()
+    plt.close("all")
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("style failed")
+
+    monkeypatch.setattr(chart_style, "finish", boom)
+    with pytest.raises(RuntimeError):
+        draw(g)
+    assert plt.get_fignums() == []

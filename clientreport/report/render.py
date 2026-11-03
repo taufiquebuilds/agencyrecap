@@ -1,6 +1,7 @@
 """Turn one month of data into the branded PDF report."""
 
 import base64
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,6 +12,10 @@ from clientreport.connectors.base import GA4Month, GSCMonth
 from clientreport.months import label
 from clientreport.report import charts
 from clientreport.report.metrics import Headline, channel_title, headlines, trend_title
+
+# pyplot and chart_style keep global state (open figures, the "agency" theme), so only one report is
+# drawn at a time. The app runs one worker process, so a process-wide lock is enough.
+_render_lock = threading.Lock()
 
 _env = Environment(loader=PackageLoader("clientreport.report", "templates"), autoescape=select_autoescape())
 
@@ -44,6 +49,12 @@ def _logo_uri(path: str) -> str | None:
 
 def render_report(client_name: str, period: str, ga4_month: GA4Month, gsc_month: GSCMonth,
                   branding: Branding) -> Report:
+    with _render_lock:
+        return _render_report(client_name, period, ga4_month, gsc_month, branding)
+
+
+def _render_report(client_name: str, period: str, ga4_month: GA4Month, gsc_month: GSCMonth,
+                   branding: Branding) -> Report:
     month = label(period)
     accent = branding.accent_hex
     heads = headlines(ga4_month, gsc_month)

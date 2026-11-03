@@ -13,11 +13,21 @@ def _theme(accent_hex: str) -> str:
     return "agency"
 
 
-def _png(fig) -> bytes:
-    buf = BytesIO()
-    fig.savefig(buf, format="png", dpi=150)
-    plt.close(fig)
-    return buf.getvalue()
+def _png(make_figure, title: str, kicker: str) -> bytes:
+    """Draw, style and save one figure, and close it even when drawing raises.
+
+    pyplot keeps global state, so callers hold render's lock; closing "all" covers a failure inside
+    make_figure before it hands the figure back.
+    """
+    fig = None
+    try:
+        fig, _ = make_figure()
+        cs.finish(fig, title=title, kicker=kicker)
+        buf = BytesIO()
+        fig.savefig(buf, format="png", dpi=150)
+        return buf.getvalue()
+    finally:
+        plt.close(fig if fig is not None else "all")
 
 
 def channels_chart(channels: list[tuple[str, int]], accent_hex: str, title: str, kicker: str) -> bytes | None:
@@ -25,9 +35,8 @@ def channels_chart(channels: list[tuple[str, int]], accent_hex: str, title: str,
         return None
     labels = [name for name, _ in channels]
     values = [n for _, n in channels]
-    fig, _ = cs.hbar(labels, values, highlight=labels[0], theme=_theme(accent_hex), size="wide")
-    cs.finish(fig, title=title, kicker=kicker)
-    return _png(fig)
+    return _png(lambda: cs.hbar(labels, values, highlight=labels[0], theme=_theme(accent_hex), size="wide"),
+                title, kicker)
 
 
 def trend_chart(trend: list[tuple[str, int]], accent_hex: str, title: str, kicker: str) -> bytes | None:
@@ -35,6 +44,4 @@ def trend_chart(trend: list[tuple[str, int]], accent_hex: str, title: str, kicke
     if not any(values):
         return None
     x = [short_label(m) for m, _ in trend]
-    fig, _ = cs.line(x, {"total": values}, theme=_theme(accent_hex), size="wide")
-    cs.finish(fig, title=title, kicker=kicker)
-    return _png(fig)
+    return _png(lambda: cs.line(x, {"total": values}, theme=_theme(accent_hex), size="wide"), title, kicker)

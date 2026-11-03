@@ -3,6 +3,7 @@
 import html as html_lib
 import logging
 import re
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -22,6 +23,10 @@ from clientreport.report.render import Branding, Report, render_report
 logger = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 3
+
+# One uvicorn worker: the scheduler thread and the web threadpool share this process, so one lock
+# is enough to keep two sends of the same month from running at once.
+_send_lock = threading.Lock()
 
 
 @dataclass
@@ -72,18 +77,42 @@ def alert_email(agency: AgencySettings, client: Client, run: ReportRun, from_ema
                          subject=f"Report failed: {client.name}, {month}", text=text)
 
 
-def mark_google_broken(session: Session, error: str) -> None:
+def google_broken_email(agency: AgencySettings, error: str, from_email: str) -> EmailMessage:
+    text = ("The Google connection stopped working, so monthly reports are on hold. Nothing is sent "
+            "until you connect again.\n\n"
+            f"Error:\n{error}\n\n"
+            "Open Settings in clientreport and click Connect Google. Held reports go out on the next "
+            "daily run after that.\n")
+    return build_message(from_email=from_email, to=[agency.owner_email],
+                         subject="Google connection stopped working", text=text)
+
+
+def mark_google_broken(session: Session, error: str) -> bool:
+    """Flag the saved connection as broken. True only when it was working until now."""
     conn = get_google(session)
     if conn is not None and conn.refresh_token_enc and conn.status == "ok":
         conn.status = "broken"
         conn.last_error = error
         session.add(conn)
         session.commit()
+        return True
+    return False
+
+
+def _alert_google_broken(session: Session, deps: Deps, error: str) -> None:
+    agency = get_agency(session)
+    if not agency.owner_email:
+        return
+    try:
+        deps.send_mail(google_broken_email(agency, error, deps.from_email))
+    except Exception:  # the dashboard banner still shows it; never abort the scheduler loop
+        logger.exception("Could not send the Google alert to the owner")
 
 
 def _get_run(session: Session, client_id: int, period: str) -> ReportRun:
     run = session.exec(
         select(ReportRun).where(ReportRun.client_id == client_id, ReportRun.period == period)
+        .execution_options(populate_existing=True)  # never trust a copy another thread may have changed
     ).first()
     if run is None:
         run = ReportRun(client_id=client_id, period=period)
@@ -93,9 +122,17 @@ def _get_run(session: Session, client_id: int, period: str) -> ReportRun:
     return run
 
 
-def send_report(session: Session, client: Client, period: str, deps: Deps, manual: bool = False) -> ReportRun:
+def send_report(session: Session, client: Client, period: str, deps: Deps, manual: bool = False,
+                force: bool = False) -> ReportRun:
+    """manual: user-initiated, so reset the attempts. force: the admin confirmed re-sending a sent month."""
+    with _send_lock:
+        return _send_report(session, client, period, deps, manual, force)
+
+
+def _send_report(session: Session, client: Client, period: str, deps: Deps, manual: bool,
+                 force: bool) -> ReportRun:
     run = _get_run(session, client.id, period)
-    if run.status == "sent" and not manual:
+    if run.status == "sent" and not force:
         return run
     was_sent = run.status == "sent"  # a manual re-send of a delivered month
     if manual:
@@ -113,8 +150,9 @@ def send_report(session: Session, client: Client, period: str, deps: Deps, manua
         session.refresh(run)  # rollback expired run and discarded the manual attempts reset
         if not isinstance(exc, (SourceError, OSError)):
             logger.exception("Unexpected error building report for client %s, %s", client.id, period)
-        if isinstance(exc, GoogleAuthError):
-            mark_google_broken(session, str(exc))
+        google_auth = isinstance(exc, GoogleAuthError)
+        if google_auth and mark_google_broken(session, str(exc)):
+            _alert_google_broken(session, deps, str(exc))
         run.last_error = str(exc) or exc.__class__.__name__
         if was_sent:  # the month was already delivered: record the error, keep it sent, no alert
             session.add(run)
@@ -122,6 +160,11 @@ def send_report(session: Session, client: Client, period: str, deps: Deps, manua
             return run
         if manual:
             run.attempts = 0
+        if google_auth:  # the problem is the connection, not this report: hold it, no attempt counted
+            run.status = "held"
+            session.add(run)
+            session.commit()
+            return run
         run.attempts += 1
         run.status = "failed" if run.attempts >= MAX_ATTEMPTS else "held"
         session.add(run)

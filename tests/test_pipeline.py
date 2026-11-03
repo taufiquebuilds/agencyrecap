@@ -1,14 +1,16 @@
 import smtplib
+import threading
 from datetime import date
 from pathlib import Path
 
 import pytest
 from fakes import FakeHttp, FakeMailer
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from clientreport.connectors.base import GoogleAuthError, SourceError
 from clientreport.db import Client, GoogleConnection, ReportRun, get_agency, get_google, make_engine
 from clientreport.pipeline import Deps, send_report
+from clientreport.scheduler import run_due_reports
 
 
 @pytest.fixture
@@ -63,8 +65,62 @@ def test_manual_send_sends_again(env):
     mailer = FakeMailer()
     d = deps(tmp, FakeHttp(), mailer)
     send_report(session, client, "2026-10", d)
-    send_report(session, client, "2026-10", d, manual=True)
+    send_report(session, client, "2026-10", d, manual=True, force=True)
     assert len(mailer.sent) == 2
+
+
+def test_manual_send_of_a_sent_month_without_force_sends_nothing(env):
+    session, client, tmp = env
+    mailer = FakeMailer()
+    d = deps(tmp, FakeHttp(), mailer)
+    first = send_report(session, client, "2026-10", d)
+    run = send_report(session, client, "2026-10", d, manual=True)
+    assert run.status == "sent"
+    assert run.sent_at == first.sent_at
+    assert len(mailer.sent) == 1
+
+
+def test_manual_send_retries_a_failed_month_without_force(env):
+    session, client, tmp = env
+    session.add(ReportRun(client_id=client.id, period="2026-10", status="failed", attempts=3))
+    session.commit()
+    mailer = FakeMailer()
+    run = send_report(session, client, "2026-10", deps(tmp, FakeHttp(), mailer), manual=True)
+    assert run.status == "sent"
+    assert len(mailer.sent) == 1
+
+
+def test_two_threads_sending_the_same_pending_month_send_one_email(env):
+    session, client, tmp = env
+    engine = session.get_bind()
+    entered, release = threading.Event(), threading.Event()
+    sent = []
+
+    def slow_mailer(message):
+        sent.append(message)
+        entered.set()
+        release.wait(10)  # the first sender stays inside the send until the test lets it go
+
+    d = deps(tmp, FakeHttp(), slow_mailer)
+    results = {}
+
+    def worker(name):
+        with Session(engine, expire_on_commit=False) as s:
+            c = s.get(Client, client.id)
+            results[name] = send_report(s, c, "2026-10", d).status
+
+    first = threading.Thread(target=worker, args=("first",))
+    second = threading.Thread(target=worker, args=("second",))
+    first.start()
+    assert entered.wait(30)
+    second.start()
+    second.join(0.3)  # without the lock the second sender would already be past its status check
+    release.set()
+    first.join(30)
+    second.join(30)
+    assert not first.is_alive() and not second.is_alive()
+    assert len(sent) == 1
+    assert results == {"first": "sent", "second": "sent"}
 
 
 def test_failing_source_holds_then_fails_and_alerts_owner(env):
@@ -127,7 +183,7 @@ def test_failed_manual_resend_keeps_sent_month_sent(env):
     sent_at, pdf_path = first.sent_at, first.pdf_path
     assert len(mailer.sent) == 1
     failing = deps(tmp, FakeHttp(fail=SourceError("GSC 500"), fail_on="searchAnalytics"), mailer)
-    run = send_report(session, client, "2026-10", failing, manual=True)
+    run = send_report(session, client, "2026-10", failing, manual=True, force=True)
     assert run.status == "sent"
     assert run.sent_at == sent_at
     assert run.pdf_path == pdf_path
@@ -152,3 +208,59 @@ def test_session_stays_usable_after_db_error(env):
     assert run.status == "held"
     assert run.attempts == 1
     assert session.get(ReportRun, run.id).status == "held"
+
+
+def test_broken_google_holds_runs_without_attempts_and_alerts_the_owner_once(env):
+    session, client, tmp = env
+    engine = session.get_bind()
+    client.enabled_at = date(2026, 10, 1)
+    session.add(client)
+    session.add(GoogleConnection(email="me@agency.com", refresh_token_enc="x", status="ok"))
+    session.commit()
+    mailer = FakeMailer()
+    state = {"http": FakeHttp(fail=GoogleAuthError("invalid_grant"))}
+    d = Deps(data_dir=tmp, from_email="reports@agency.com", http_factory=lambda s: state["http"],
+             send_mail=mailer, today=lambda: date(2026, 11, 4))
+    for day in range(4, 8):  # four daily runs, well past the three-attempt limit
+        d.today = lambda day=day: date(2026, 11, day)
+        assert run_due_reports(engine, d) == [(client.id, "2026-10", "held")]
+    session.expire_all()
+    run = session.exec(select(ReportRun)).one()
+    assert (run.status, run.attempts) == ("held", 0)
+    assert "invalid_grant" in run.last_error
+    assert get_google(session).status == "broken"
+    assert [m["To"] for m in mailer.sent] == ["owner@agency.com"]
+    assert mailer.sent[0]["Subject"] == "Google connection stopped working"
+    body = mailer.sent[0].get_body(("plain",)).get_content()
+    assert "on hold" in body and "Connect Google" in body
+
+    conn = get_google(session)  # the admin reconnects: a fresh saved connection has status ok
+    conn.status, conn.last_error = "ok", ""
+    session.add(conn)
+    session.commit()
+    state["http"] = FakeHttp()
+    d.today = lambda: date(2026, 11, 8)
+    assert run_due_reports(engine, d) == [(client.id, "2026-10", "sent")]
+    assert [m["To"] for m in mailer.sent] == ["owner@agency.com", "ceo@acme.com"]
+
+
+def test_broken_google_does_not_break_a_sent_month_on_manual_resend(env):
+    session, client, tmp = env
+    session.add(GoogleConnection(email="me@agency.com", refresh_token_enc="x", status="ok"))
+    session.commit()
+    mailer = FakeMailer()
+    send_report(session, client, "2026-10", deps(tmp, FakeHttp(), mailer))
+    failing = deps(tmp, FakeHttp(fail=GoogleAuthError("invalid_grant")), mailer)
+    run = send_report(session, client, "2026-10", failing, manual=True, force=True)
+    assert run.status == "sent"
+    assert [m["To"] for m in mailer.sent] == ["ceo@acme.com", "owner@agency.com"]
+
+
+def test_google_alert_failure_does_not_escape(env, caplog):
+    session, client, tmp = env
+    session.add(GoogleConnection(email="me@agency.com", refresh_token_enc="x", status="ok"))
+    session.commit()
+    mailer = FakeMailer(fail=smtplib.SMTPException("server down"))
+    run = send_report(session, client, "2026-10", deps(tmp, FakeHttp(fail=GoogleAuthError("invalid_grant")), mailer))
+    assert (run.status, run.attempts) == ("held", 0)
+    assert "Google alert" in caplog.text
