@@ -33,17 +33,21 @@ def create_app(settings: Settings, deps: Deps | None = None, start_scheduler: bo
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        job = scheduler.start_scheduler(engine, deps, settings.tz) if start_scheduler else None
-        yield
-        if job is not None:
-            job.shutdown(wait=False)
+        app.state.scheduler = scheduler.start_scheduler(engine, deps, settings.tz) if start_scheduler else None
+        try:
+            yield
+        finally:
+            if app.state.scheduler is not None:
+                app.state.scheduler.shutdown(wait=False)
 
-    app = FastAPI(title="clientreport", lifespan=lifespan)
+    app = FastAPI(title="clientreport", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(SessionMiddleware, secret_key=settings.app_secret_key, same_site="lax",
                        https_only=settings.base_url.startswith("https://"))
     app.state.settings = settings
     app.state.engine = engine
     app.state.deps = deps
+    app.state.scheduler = None
+    app.state.login_failures = {}
     app.include_router(auth.router)
     app.include_router(pages.router)
     return app
