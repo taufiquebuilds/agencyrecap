@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+{% if not google or not google.refresh_token_enc %}
+<div class="banner">Google is not connected. <a href="/settings">Connect Google</a> before adding clients.</div>
+{% elif google.status == "broken" %}
+<div class="banner bad">Google connection stopped working: {{ google.last_error }}. Reports are on hold until you <a href="/settings">reconnect</a>.</div>
+{% endif %}
+<h1>Clients</h1>
+<p><a class="button primary" href="/clients/new">Add client</a></p>
+{% if clients %}
+<table>
+  <tr><th>Client</th><th>Monthly send</th><th>{{ month }} report</th><th></th></tr>
+  {% for c in clients %}
+  {% set run = runs.get(c.id) %}
+  <tr>
+    <td><strong>{{ c.name }}</strong><br><span class="hint">{{ c.recipients }}</span></td>
+    <td>
+      <form class="inline" method="post" action="/clients/{{ c.id }}/toggle">
+        <button>{{ "On, day " ~ c.send_day if c.enabled else "Off" }}</button>
+      </form>
+    </td>
+    <td>
+      {% if not run or run.status == "pending" %}Not sent yet
+      {% elif run.status == "sent" %}<span class="ok">Sent {{ run.sent_at.strftime("%-d %b, %H:%M") }} UTC</span>
+      {% else %}<span class="err">{{ "Failed" if run.status == "failed" else "On hold" }}: {{ run.last_error }}</span>
+      {% endif %}
+    </td>
+    <td>
+      <a class="button" href="/clients/{{ c.id }}/preview" target="_blank">Preview</a>
+      <form class="inline" method="post" action="/clients/{{ c.id }}/send"><button>Send now</button></form>
+      <a class="button" href="/clients/{{ c.id }}/edit">Edit</a>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>No clients yet.</p>
+{% endif %}
+{% endblock %}

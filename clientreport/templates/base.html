@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}clientreport{% endblock %}</title>
+<style>
+  :root { --fg: #16181d; --muted: #6b7280; --line: #e5e7eb; --ok: #1f7a4d; --bad: #b42318; --bg: #fafafa; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: var(--fg); background: var(--bg); }
+  nav { display: flex; gap: 16px; align-items: center; padding: 12px 24px; background: #fff; border-bottom: 1px solid var(--line); }
+  nav .grow { flex: 1; }
+  nav a { color: var(--fg); text-decoration: none; font-weight: 600; }
+  main { max-width: 980px; margin: 24px auto; padding: 0 16px; }
+  .banner { padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; background: #fff4e5; border: 1px solid #f5c26b; }
+  .banner.bad { background: #fdecea; border-color: #f1a7a0; color: var(--bad); }
+  .ok { color: var(--ok); }
+  .err { color: var(--bad); }
+  .hint { color: var(--muted); font-size: 0.9em; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--line); }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  form.inline { display: inline; }
+  button, .button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: #fff; cursor: pointer; color: var(--fg); text-decoration: none; display: inline-block; }
+  button.primary, .button.primary { background: var(--fg); color: #fff; border-color: var(--fg); }
+  label { display: block; margin: 14px 0 4px; font-weight: 600; }
+  input, select { font: inherit; padding: 8px; width: 100%; max-width: 480px; border: 1px solid var(--line); border-radius: 6px; }
+</style>
+</head>
+<body>
+{% if request.session.get("admin") %}
+<nav>
+  <a href="/">Clients</a>
+  <a href="/settings">Settings</a>
+  <span class="grow"></span>
+  <form class="inline" method="post" action="/logout"><button>Log out</button></form>
+</nav>
+{% endif %}
+<main>{% block content %}{% endblock %}</main>
+</body>
+</html>
