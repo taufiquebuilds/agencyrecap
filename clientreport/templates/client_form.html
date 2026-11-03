@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ "Edit " ~ values.name if client_id else "Add client" }}</h1>
+{% if error %}<p class="err">{{ error }}</p>{% endif %}
+{% if source_error %}<p class="err">{{ source_error }}</p>{% endif %}
+<form method="post" action="{{ '/clients/%d' % client_id if client_id else '/clients' }}">
+  <label for="name">Client name</label>
+  <input id="name" name="name" value="{{ values.name }}" required>
+
+  <label for="recipients">Send to (comma-separated emails)</label>
+  <input id="recipients" name="recipients" value="{{ values.recipients }}" required>
+
+  <label for="ga4_property_id">GA4 property</label>
+  {% if properties %}
+  <select id="ga4_property_id" name="ga4_property_id">
+    {% for p in properties %}<option value="{{ p.id }}" {{ "selected" if p.id == values.ga4_property_id }}>{{ p.name }}</option>{% endfor %}
+  </select>
+  {% else %}
+  <input id="ga4_property_id" name="ga4_property_id" value="{{ values.ga4_property_id }}" placeholder="Property ID, e.g. 123456789" required>
+  {% endif %}
+
+  <label for="gsc_site_url">Search Console site</label>
+  {% if sites %}
+  <select id="gsc_site_url" name="gsc_site_url">
+    {% for s in sites %}<option value="{{ s.id }}" {{ "selected" if s.id == values.gsc_site_url }}>{{ s.name }}</option>{% endfor %}
+  </select>
+  {% else %}
+  <input id="gsc_site_url" name="gsc_site_url" value="{{ values.gsc_site_url }}" placeholder="sc-domain:example.com or https://example.com/" required>
+  {% endif %}
+
+  <label for="send_day">Send on day of the month (3–28)</label>
+  <input id="send_day" name="send_day" type="number" min="3" max="28" value="{{ values.send_day }}">
+  <p class="hint">Search Console data arrives 2–3 days late, so the earliest send day is the 3rd.</p>
+
+  <p><button class="primary">Save</button> <a class="button" href="/">Cancel</a></p>
+</form>
+{% endblock %}

@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Send again?</h1>
+<p>The {{ month }} report for <strong>{{ client.name }}</strong> was already sent on {{ run.sent_at.strftime("%-d %b at %H:%M") }} UTC.</p>
+<form method="post" action="/clients/{{ client.id }}/send">
+  <input type="hidden" name="confirm" value="yes">
+  <button class="primary">Send it again</button>
+  <a class="button" href="/">Cancel</a>
+</form>
+{% endblock %}

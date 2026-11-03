@@ -12,7 +12,7 @@ from clientreport.config import Settings
 from clientreport.db import make_engine
 from clientreport.google_oauth import make_http
 from clientreport.pipeline import Deps
-from clientreport.routes import auth, pages
+from clientreport.routes import auth, clients, google, pages
 
 
 def default_deps(settings: Settings) -> Deps:
@@ -50,4 +50,6 @@ def create_app(settings: Settings, deps: Deps | None = None, start_scheduler: bo
     app.state.login_failures = {}
     app.include_router(auth.router)
     app.include_router(pages.router)
+    app.include_router(google.router)
+    app.include_router(clients.router)
     return app

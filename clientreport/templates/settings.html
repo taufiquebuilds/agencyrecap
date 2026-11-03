@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Settings</h1>
+{% if saved %}<p class="ok">Saved.</p>{% endif %}
+{% if connected %}<p class="ok">Google connected.</p>{% endif %}
+{% if error %}<p class="err">{{ error }}</p>{% endif %}
+
+<h2>Google</h2>
+{% if google and google.refresh_token_enc %}
+<p>Connected as <strong>{{ google.email }}</strong>{% if google.status == "broken" %} <span class="err">(stopped working: {{ google.last_error }})</span>{% endif %}.</p>
+{% else %}
+<p>Not connected.</p>
+{% endif %}
+<p><a class="button primary" href="/auth/google/start">Connect Google</a></p>
+<p class="hint">Sign in with the Google account that can see your clients' GA4 properties and Search Console sites.
+Redirect URI for your Google OAuth client: <code>{{ redirect_uri }}</code></p>
+
+<h2>Agency</h2>
+<form method="post" action="/settings" enctype="multipart/form-data">
+  <label for="name">Agency name</label>
+  <input id="name" name="name" value="{{ agency.name }}" required>
+  <label for="logo">Logo (PNG or SVG, max 1 MB)</label>
+  <input id="logo" name="logo" type="file" accept="image/png,image/svg+xml">
+  {% if agency.logo_path %}<p class="hint">Current logo: {{ agency.logo_path.split("/")[-1] }}</p>{% endif %}
+  <label for="accent_hex">Accent colour</label>
+  <input id="accent_hex" name="accent_hex" value="{{ agency.accent_hex }}">
+  <label for="owner_email">Your email (for failure alerts)</label>
+  <input id="owner_email" name="owner_email" type="email" value="{{ agency.owner_email }}">
+  <label for="reply_to">Reply-to email for clients</label>
+  <input id="reply_to" name="reply_to" type="email" value="{{ agency.reply_to }}">
+  <label for="footer">Footer line on reports and emails</label>
+  <input id="footer" name="footer" value="{{ agency.footer }}">
+  <p><button class="primary">Save</button></p>
+</form>
+{% endblock %}
