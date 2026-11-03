@@ -49,7 +49,7 @@ def test_login_is_throttled_after_five_failures(app):
     with TestClient(app) as client:
         for _ in range(5):
             assert client.post("/login", data={"password": "nope"}).status_code == 401
-        r = client.post("/login", data={"password": "pw"})  # right password, but locked out
+        r = client.post("/login", data={"password": "test-password-10"})  # right password, but locked out
         assert r.status_code == 429
         assert "Too many attempts. Try again in 15 minutes." in r.text
         assert client.get("/", follow_redirects=False).status_code == 303  # not logged in
@@ -60,7 +60,7 @@ def test_throttle_is_per_app_and_cleared_by_success(app, settings, http, mailer)
     with TestClient(app) as client:
         for _ in range(4):
             client.post("/login", data={"password": "nope"})
-        assert client.post("/login", data={"password": "pw"}, follow_redirects=False).status_code == 303
+        assert client.post("/login", data={"password": "test-password-10"}, follow_redirects=False).status_code == 303
         for _ in range(4):  # counter was cleared, so four more failures are still allowed
             assert client.post("/login", data={"password": "nope"}).status_code == 401
     fresh = create_app(settings, deps=app.state.deps, start_scheduler=False)
@@ -75,9 +75,9 @@ def test_throttle_expires_after_fifteen_minutes(app, monkeypatch):
     with TestClient(app) as client:
         for _ in range(5):
             client.post("/login", data={"password": "nope"})
-        assert client.post("/login", data={"password": "pw"}).status_code == 429
+        assert client.post("/login", data={"password": "test-password-10"}).status_code == 429
         now[0] += 15 * 60 + 1
-        assert client.post("/login", data={"password": "pw"}, follow_redirects=False).status_code == 303
+        assert client.post("/login", data={"password": "test-password-10"}, follow_redirects=False).status_code == 303
 
 
 def test_api_docs_are_not_exposed(app):

@@ -36,11 +36,20 @@ def send(message: EmailMessage, config: SmtpConfig, smtp_factory=None) -> None:
     if not config.host:
         raise OSError("SMTP_HOST is not set, so email cannot be sent")
     context = ssl.create_default_context()
-    factory = smtp_factory or (smtplib.SMTP_SSL if config.port == 465 else smtplib.SMTP)
-    options = {"context": context} if config.port == 465 else {}
+    implicit_tls = config.port == 465
+    factory = smtp_factory or (smtplib.SMTP_SSL if implicit_tls else smtplib.SMTP)
+    options = {"context": context} if implicit_tls else {}
     with factory(config.host, config.port, timeout=30, **options) as smtp:
-        if config.port == 587:
-            smtp.starttls(context=context)
+        encrypted = implicit_tls
+        if not implicit_tls:
+            smtp.ehlo()
+            # 587 must upgrade (an error if the server cannot); other ports upgrade when offered
+            if config.port == 587 or smtp.has_extn("starttls"):
+                smtp.starttls(context=context)
+                smtp.ehlo()
+                encrypted = True
         if config.user:
+            if not encrypted:
+                raise OSError("SMTP server does not support TLS; refusing to send the password in clear text.")
             smtp.login(config.user, config.password)
         smtp.send_message(message)

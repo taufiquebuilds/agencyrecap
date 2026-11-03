@@ -30,6 +30,9 @@ def load_settings(env: Mapping[str, str] = os.environ) -> Settings:
     missing = [name for name in REQUIRED if not env.get(name)]
     if missing:
         raise RuntimeError("Missing environment variables: " + ", ".join(missing))
+    password = env["ADMIN_PASSWORD"]
+    if password == "change-me" or len(password) < 10:
+        raise RuntimeError("Set ADMIN_PASSWORD in .env to a password of at least 10 characters.")
     key = env["APP_SECRET_KEY"]
     try:
         Fernet(key.encode())
@@ -40,7 +43,7 @@ def load_settings(env: Mapping[str, str] = os.environ) -> Settings:
         ) from exc
     return Settings(
         base_url=env["BASE_URL"].rstrip("/"),
-        admin_password=env["ADMIN_PASSWORD"],
+        admin_password=password,
         app_secret_key=key,
         google_client_id=env.get("GOOGLE_CLIENT_ID", ""),
         google_client_secret=env.get("GOOGLE_CLIENT_SECRET", ""),

@@ -5,7 +5,7 @@ from clientreport import crypto
 from clientreport.config import load_settings
 
 KEY = Fernet.generate_key().decode()
-BASE = {"BASE_URL": "http://localhost:8000/", "ADMIN_PASSWORD": "pw", "APP_SECRET_KEY": KEY}
+BASE = {"BASE_URL": "http://localhost:8000/", "ADMIN_PASSWORD": "test-password-10", "APP_SECRET_KEY": KEY}
 
 
 def test_load_settings_defaults():
@@ -31,3 +31,13 @@ def test_encrypt_roundtrip():
     token = crypto.encrypt(KEY, "refresh-123")
     assert token != "refresh-123"
     assert crypto.decrypt(KEY, token) == "refresh-123"
+
+
+@pytest.mark.parametrize("password", ["change-me", "short", "123456789"])
+def test_placeholder_or_short_admin_password_is_refused(password):
+    with pytest.raises(RuntimeError, match="at least 10 characters"):
+        load_settings({**BASE, "ADMIN_PASSWORD": password})
+
+
+def test_ten_character_admin_password_is_accepted():
+    assert load_settings({**BASE, "ADMIN_PASSWORD": "1234567890"}).admin_password == "1234567890"

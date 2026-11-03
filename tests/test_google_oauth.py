@@ -19,7 +19,7 @@ from clientreport.google_oauth import (
 @pytest.fixture
 def settings(tmp_path):
     return load_settings({
-        "BASE_URL": "http://localhost:8000", "ADMIN_PASSWORD": "pw",
+        "BASE_URL": "http://localhost:8000", "ADMIN_PASSWORD": "test-password-10",
         "APP_SECRET_KEY": Fernet.generate_key().decode(),
         "GOOGLE_CLIENT_ID": "cid.apps.googleusercontent.com", "GOOGLE_CLIENT_SECRET": "secret",
         "DATA_DIR": str(tmp_path),

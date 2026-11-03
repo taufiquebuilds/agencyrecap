@@ -18,7 +18,7 @@ You need Docker.
 2. Make a secret key and paste it into `APP_SECRET_KEY`:
    `python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
    Do not change this key later. After you connect Google it is used to read the saved connection, and if it changes you have to connect Google again.
-3. Set `ADMIN_PASSWORD`, your SMTP details and `TZ`. For Gmail, `SMTP_PASSWORD` must be an app password (Google Account → Security → 2-Step Verification → App passwords), not your normal password.
+3. Set `ADMIN_PASSWORD` (at least 10 characters; the app refuses to start with the `change-me` placeholder), your SMTP details and `TZ`. Use port 587 or 465 for SMTP; on any other port the app switches to TLS when the server offers it and refuses to send your SMTP password in clear text. For Gmail, `SMTP_PASSWORD` must be an app password (Google Account → Security → 2-Step Verification → App passwords), not your normal password.
 4. Create the Google OAuth client (next section) and fill in `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
 5. Start it: `docker compose up -d`
 6. Open http://localhost:8000 and sign in with `ADMIN_PASSWORD`.
