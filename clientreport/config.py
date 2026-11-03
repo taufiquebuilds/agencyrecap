@@ -4,6 +4,7 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from cryptography.fernet import Fernet
 
@@ -41,6 +42,11 @@ def load_settings(env: Mapping[str, str] = os.environ) -> Settings:
             "APP_SECRET_KEY must be a Fernet key. Make one with: "
             'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
         ) from exc
+    tz = env.get("TZ") or "UTC"  # Docker passes an empty TZ when it is unset in .env
+    try:
+        ZoneInfo(tz)
+    except Exception as exc:  # unknown name, bad key, or no tz database
+        raise RuntimeError(f"TZ must be a timezone name such as Europe/London, not {tz!r}.") from exc
     return Settings(
         base_url=env["BASE_URL"].rstrip("/"),
         admin_password=password,
@@ -52,6 +58,6 @@ def load_settings(env: Mapping[str, str] = os.environ) -> Settings:
         smtp_user=env.get("SMTP_USER", ""),
         smtp_password=env.get("SMTP_PASSWORD", ""),
         from_email=env.get("FROM_EMAIL", ""),
-        tz=env.get("TZ", "UTC"),
-        data_dir=Path(env.get("DATA_DIR", "/data")),
+        tz=tz,
+        data_dir=Path(env.get("DATA_DIR") or "/data"),
     )

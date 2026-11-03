@@ -18,6 +18,7 @@ dependencies = [
     "google-auth>=2.35",
     "google-auth-oauthlib>=1.2",
     "requests>=2.32",
+    "tzdata>=2024.1",
 ]
 
 [dependency-groups]

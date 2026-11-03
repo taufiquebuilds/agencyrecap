@@ -36,11 +36,17 @@ def test_headlines_order():
 
 def test_channel_title():
     channels = [("Organic Search", 620), ("Direct", 310), ("Paid Search", 270)]
-    assert channel_title(channels) == "Organic Search brought 52% of sessions: 620 of 1,200"
+    assert channel_title(channels, 1200) == "Organic Search brought 52% of sessions: 620 of 1,200"
+
+
+def test_channel_title_uses_the_months_total_when_channels_are_cut_off():
+    channels = [("Organic Search", 400), ("Direct", 100)]  # only the top channels are listed
+    assert channel_title(channels, 1000) == "Organic Search brought 40% of sessions: 400 of 1,000"
 
 
 def test_channel_title_with_no_sessions():
-    assert channel_title([]) == "No sessions recorded this month"
+    assert channel_title([], 0) == "No sessions recorded this month"
+    assert channel_title([("Direct", 0)], 0) == "No sessions recorded this month"
 
 
 def test_trend_title_compares_with_a_year_ago():

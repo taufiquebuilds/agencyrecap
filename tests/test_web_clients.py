@@ -1,3 +1,4 @@
+import asyncio
 import re
 from datetime import date
 
@@ -67,6 +68,31 @@ def test_invalid_submission_with_google_down_still_renders(web, http):
     assert r.status_code == 422
     assert "between 3 and 28" in r.text
     assert "Google is not connected" in r.text
+
+
+def _loop_running() -> bool:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
+def test_blocking_google_lookups_on_validation_errors_stay_off_the_event_loop(web, monkeypatch):
+    from clientreport.routes import clients as clients_routes
+
+    web.post("/clients", data=GOOD)
+    on_loop = []
+    real = clients_routes._sources
+
+    def spy(request, session):
+        on_loop.append(_loop_running())  # _sources makes blocking Google calls
+        return real(request, session)
+
+    monkeypatch.setattr(clients_routes, "_sources", spy)
+    assert web.post("/clients", data={**GOOD, "send_day": "1"}).status_code == 422
+    assert web.post("/clients/1", data={**GOOD, "send_day": "1"}).status_code == 422
+    assert on_loop == [False, False]
 
 
 def test_create_client_validates_send_day(web):

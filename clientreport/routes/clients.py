@@ -75,8 +75,8 @@ def new_client(request: Request, session: Session = Depends(db)):
 async def create_client(request: Request, session: Session = Depends(db)):
     values = _read(await request.form())
     error = _validate(values)
-    if error:
-        return _form(request, session, values, error=error, status_code=422)
+    if error:  # _form calls Google, which blocks, so keep it off the event loop
+        return await run_in_threadpool(_form, request, session, values, error=error, status_code=422)
     client = Client(name="", recipients="", ga4_property_id="", gsc_site_url="")
     _apply(client, values)
     session.add(client)
@@ -101,7 +101,8 @@ async def update_client(request: Request, client_id: int, session: Session = Dep
     values = _read(await request.form())
     error = _validate(values)
     if error:
-        return _form(request, session, values, client_id=client_id, error=error, status_code=422)
+        return await run_in_threadpool(_form, request, session, values, client_id=client_id, error=error,
+                                       status_code=422)
     _apply(client, values)
     session.add(client)
     session.commit()

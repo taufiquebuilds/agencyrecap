@@ -71,10 +71,11 @@ When you click **Connect Google**, Google shows a list of permissions with a tic
 ## How sending works
 
 - A job runs every day at 07:00 in `TZ` and sends every report that is due.
-- A client never gets the same month twice. **Send now** on a month already sent asks before sending again.
+- A client never gets the same month twice. **Send now** on a month already sent asks before sending again, and two clicks (or a click during the 07:00 run) send only once.
 - If GA4 or Search Console fails, the report is held, never sent half-empty. It retries daily; after 3 failures you get an email with the reason.
-- If Google stops accepting the sign-in, the dashboard shows a red banner and reports wait until you click **Connect Google** again.
+- If Google stops accepting the sign-in, the dashboard shows a red banner and you get one email. Every report waits, however many days that takes, and none is marked failed. When you click **Connect Google** again, the waiting reports go out on the next 07:00 run.
 - Run one container only. The send job lives inside the app.
+- Times on the dashboard are shown in `TZ`. `TZ` must be a real timezone name such as `Europe/London`, or the app will not start.
 
 ## Develop
 

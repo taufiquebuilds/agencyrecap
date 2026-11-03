@@ -21,7 +21,7 @@
     </td>
     <td>
       {% if not run or run.status == "pending" %}Not sent yet
-      {% elif run.status == "sent" %}<span class="ok">Sent {{ run.sent_at.strftime("%-d %b, %H:%M") }} UTC</span>{% if run.last_error %} <span class="err">&middot; Last re-send failed: {{ run.last_error }}</span>{% endif %}
+      {% elif run.status == "sent" %}<span class="ok">Sent {{ run.sent_at|local_time(tz) }}</span>{% if run.last_error %} <span class="err">&middot; Last re-send failed: {{ run.last_error }}</span>{% endif %}
       {% else %}<span class="err">{{ "Failed" if run.status == "failed" else "On hold" }}: {{ run.last_error }}</span>
       {% endif %}
     </td>

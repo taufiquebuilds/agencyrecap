@@ -46,9 +46,9 @@ def headlines(ga4: GA4Month, gsc: GSCMonth) -> list[Headline]:
     ]
 
 
-def channel_title(channels: list[tuple[str, int]]) -> str:
-    total = sum(n for _, n in channels)
-    if total == 0:
+def channel_title(channels: list[tuple[str, int]], total: int) -> str:
+    """total is the month's sessions; the chart may list only the top channels."""
+    if total == 0 or not channels:
         return "No sessions recorded this month"
     name, n = channels[0]
     return f"{name} brought {round(n / total * 100)}% of sessions: {n:,} of {total:,}"

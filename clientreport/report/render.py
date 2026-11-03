@@ -65,7 +65,7 @@ def _render_report(client_name: str, period: str, ga4_month: GA4Month, gsc_month
         logo_uri=_logo_uri(branding.logo_path),
         headlines=heads,
         channels_png=_data_uri(charts.channels_chart(
-            ga4_month.channels, accent, channel_title(ga4_month.channels), f"Sessions by channel, {month}")),
+            ga4_month.channels, accent, channel_title(ga4_month.channels, ga4_month.sessions), f"Sessions by channel, {month}")),
         sessions_png=_data_uri(charts.trend_chart(
             ga4_month.trend, accent, trend_title("Sessions", ga4_month.trend), "Sessions per month, last 13 months")),
         clicks_png=_data_uri(charts.trend_chart(

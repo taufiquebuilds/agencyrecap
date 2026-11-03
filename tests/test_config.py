@@ -41,3 +41,19 @@ def test_placeholder_or_short_admin_password_is_refused(password):
 
 def test_ten_character_admin_password_is_accepted():
     assert load_settings({**BASE, "ADMIN_PASSWORD": "1234567890"}).admin_password == "1234567890"
+
+
+def test_empty_tz_and_data_dir_fall_back_to_defaults():
+    s = load_settings({**BASE, "TZ": "", "DATA_DIR": ""})
+    assert s.tz == "UTC"
+    assert str(s.data_dir) == "/data"
+
+
+def test_valid_tz_is_kept():
+    assert load_settings({**BASE, "TZ": "Asia/Kolkata"}).tz == "Asia/Kolkata"
+
+
+@pytest.mark.parametrize("tz", ["Mars/Olympus", "not a zone", "../etc/passwd"])
+def test_invalid_tz_is_refused_at_load_time(tz):
+    with pytest.raises(RuntimeError, match="TZ"):
+        load_settings({**BASE, "TZ": tz})

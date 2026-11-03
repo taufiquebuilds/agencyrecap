@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from fastapi.testclient import TestClient
 from sqlmodel import Session
@@ -124,3 +124,32 @@ def test_dashboard_shows_failed_resend_on_a_sent_month(web, app):
     text = web.get("/").text
     assert "Sent 5 Nov, 07:00 UTC" in text
     assert "Last re-send failed: smtp timeout" in text
+
+
+def _kolkata_app(tmp_path):
+    from cryptography.fernet import Fernet
+    from fakes import FakeHttp, FakeMailer
+
+    from clientreport.app import create_app
+    from clientreport.config import load_settings
+    from clientreport.pipeline import Deps
+
+    settings = load_settings({
+        "BASE_URL": "http://localhost:8000", "ADMIN_PASSWORD": "test-password-10",
+        "APP_SECRET_KEY": Fernet.generate_key().decode(), "TZ": "Asia/Kolkata", "DATA_DIR": str(tmp_path),
+    })
+    deps = Deps(data_dir=settings.data_dir, from_email="reports@agency.com", http_factory=lambda s: FakeHttp(),
+                send_mail=FakeMailer(), today=lambda: date(2026, 11, 4))
+    return create_app(settings, deps=deps, start_scheduler=False)
+
+
+def test_sent_time_is_shown_in_the_configured_timezone(tmp_path):
+    app = _kolkata_app(tmp_path)
+    # 2026-11-05 07:00 UTC is 12:30 in Kolkata; SQLite hands the stored value back without a zone
+    _seed_run(app, "Sent Co", "sent", sent_at=datetime(2026, 11, 5, 7, 0, tzinfo=UTC))
+    with TestClient(app) as client:
+        client.post("/login", data={"password": "test-password-10"})
+        assert "Sent 5 Nov, 12:30 IST" in client.get("/").text
+        r = client.post("/clients/1/send")
+        assert "Send again?" in r.text
+        assert "5 Nov at 12:30 IST" in r.text
