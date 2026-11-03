@@ -1,3 +1,4 @@
+from dataclasses import replace
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -9,7 +10,10 @@ from clientreport import crypto
 from clientreport.config import load_settings
 from clientreport.connectors.base import GoogleAuthError, SourceError
 from clientreport.db import GoogleConnection, get_google, make_engine
-from clientreport.google_oauth import GoogleHttp, make_http, save_connection, start_flow
+from clientreport import google_oauth
+from clientreport.google_oauth import (
+    GoogleHttp, _is_local_http, finish_flow, make_http, save_connection, start_flow,
+)
 
 
 @pytest.fixture
@@ -23,10 +27,13 @@ def settings(tmp_path):
 
 
 class Resp:
-    def __init__(self, status_code, payload=None, text=""):
+    def __init__(self, status_code, payload=None, text="", json_error=None):
         self.status_code, self._payload, self.text = status_code, payload or {}, text
+        self._json_error = json_error
 
     def json(self):
+        if self._json_error:
+            raise self._json_error
         return self._payload
 
 
@@ -55,6 +62,72 @@ def test_google_http_maps_api_errors():
 def test_google_http_maps_refresh_errors():
     with pytest.raises(GoogleAuthError, match="invalid_grant"):
         GoogleHttp(Sess(error=RefreshError("invalid_grant"))).get("https://x")
+
+
+def test_google_http_revoked_token_is_an_auth_error_with_readable_message():
+    err = RefreshError("invalid_grant: Token has been expired or revoked.", {"error": "invalid_grant"})
+    with pytest.raises(GoogleAuthError) as info:
+        GoogleHttp(Sess(error=err)).get("https://x")
+    assert "invalid_grant: Token has been expired or revoked." in str(info.value)
+    assert "{" not in str(info.value)
+
+
+def test_google_http_retryable_refresh_error_is_only_a_source_error():
+    err = RefreshError("temporarily_unavailable", retryable=True)
+    with pytest.raises(SourceError, match="temporarily_unavailable") as info:
+        GoogleHttp(Sess(error=err)).get("https://x")
+    assert not isinstance(info.value, GoogleAuthError)
+
+
+def test_google_http_non_json_success_body_is_a_source_error():
+    resp = Resp(200, text="<html>oops</html>", json_error=ValueError("bad json"))
+    with pytest.raises(SourceError, match="https://x") as info:
+        GoogleHttp(Sess(resp)).get("https://x")
+    assert "oops" not in str(info.value)
+
+
+@pytest.mark.parametrize("url,expected", [
+    ("http://localhost:8000", True),
+    ("http://127.0.0.1", True),
+    ("http://127.0.0.1:8000", True),
+    ("http://[::1]:8000", True),
+    ("http://reports.example.com", False),
+    ("http://localhost.evil.com", False),
+    ("https://localhost", False),
+    ("https://reports.example.com", False),
+])
+def test_is_local_http(url, expected):
+    assert _is_local_http(url) is expected
+
+
+def test_finish_flow_rejects_empty_state_or_verifier(settings):
+    with pytest.raises(GoogleAuthError, match="sign-in"):
+        finish_flow(settings, "", "verifier", "http://localhost:8000/auth/google/callback?code=c")
+    with pytest.raises(GoogleAuthError, match="sign-in"):
+        finish_flow(settings, "state", "", "http://localhost:8000/auth/google/callback?code=c")
+
+
+class FakeFlow:
+    def __init__(self, refresh_token):
+        self.credentials = type("C", (), {"refresh_token": refresh_token, "scopes": ["openid"]})()
+
+    def fetch_token(self, authorization_response):
+        pass
+
+
+def test_finish_flow_requires_a_refresh_token(settings, monkeypatch):
+    monkeypatch.setattr(google_oauth, "_flow", lambda *a, **k: FakeFlow(None))
+    with pytest.raises(GoogleAuthError, match="did not return a refresh token"):
+        finish_flow(settings, "state", "verifier", "http://localhost:8000/cb?code=c")
+
+
+def test_finish_flow_only_relaxes_transport_for_local_http(settings, monkeypatch):
+    monkeypatch.delenv("OAUTHLIB_INSECURE_TRANSPORT", raising=False)
+    monkeypatch.setattr(google_oauth, "_flow", lambda *a, **k: FakeFlow(None))
+    remote = replace(settings, base_url="http://reports.example.com")
+    with pytest.raises(GoogleAuthError):
+        finish_flow(remote, "state", "verifier", "http://x/cb?code=c")
+    assert "OAUTHLIB_INSECURE_TRANSPORT" not in google_oauth.os.environ
 
 
 def test_start_flow_asks_for_offline_access(settings):
@@ -95,3 +168,11 @@ def test_make_http_builds_client(settings):
     with Session(make_engine(settings.data_dir)) as session:
         save_connection(session, settings, "me@agency.com", "refresh-1", "openid")
         assert isinstance(make_http(session, settings), GoogleHttp)
+
+
+def test_make_http_wrong_secret_key_is_a_clear_auth_error(settings):
+    with Session(make_engine(settings.data_dir)) as session:
+        save_connection(session, settings, "me@agency.com", "refresh-1", "openid")
+        other = replace(settings, app_secret_key=Fernet.generate_key().decode())
+        with pytest.raises(GoogleAuthError, match="APP_SECRET_KEY may have changed"):
+            make_http(session, other)

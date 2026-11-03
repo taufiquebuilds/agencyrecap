@@ -1,8 +1,10 @@
 """Google sign-in: OAuth flow, encrypted token storage and an HTTP client for the APIs."""
 
 import os
+from urllib.parse import urlparse
 
 import requests
+from cryptography.fernet import InvalidToken
 from google.auth.exceptions import RefreshError, TransportError
 from google.auth.transport.requests import AuthorizedSession
 from google.oauth2.credentials import Credentials
@@ -41,12 +43,23 @@ class GoogleHttp:
         try:
             resp = getattr(self._session, method)(url, timeout=60, **kwargs)
         except RefreshError as exc:
-            raise GoogleAuthError(f"Google refused the saved sign-in: {exc}") from exc
+            reason = str(exc.args[0]) if exc.args else "no reason given"
+            if getattr(exc, "retryable", False):  # Google had a hiccup; the token itself is fine
+                raise SourceError(f"Google sign-in is temporarily unavailable: {reason}") from exc
+            raise GoogleAuthError(f"Google refused the saved sign-in: {reason}") from exc
         except (TransportError, requests.RequestException) as exc:
             raise SourceError(f"Could not reach Google: {exc}") from exc
         if resp.status_code >= 400:
             raise SourceError(f"Google API error {resp.status_code} for {url}: {resp.text[:300]}")
-        return resp.json()
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise SourceError(f"Google returned a reply that is not JSON for {url}") from exc
+
+
+def _is_local_http(base_url: str) -> bool:
+    parsed = urlparse(base_url)
+    return parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
 
 
 def redirect_uri(settings: Settings) -> str:
@@ -72,14 +85,20 @@ def start_flow(settings: Settings) -> tuple[str, str, str]:
 
 def finish_flow(settings: Settings, state: str, code_verifier: str,
                 authorization_response: str) -> tuple[str, str, str]:
-    if settings.base_url.startswith("http://"):
-        os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"  # local installs without HTTPS
+    if not state or not code_verifier:
+        raise GoogleAuthError("The Google sign-in session is missing or expired. Click Connect Google again.")
+    if _is_local_http(settings.base_url):
+        os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"  # plain http is fine on this machine only
     os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"  # Google may list granted scopes differently
     flow = _flow(settings, state=state, code_verifier=code_verifier)
     flow.fetch_token(authorization_response=authorization_response)
     creds = flow.credentials
+    if not creds.refresh_token:
+        raise GoogleAuthError(
+            "Google did not return a refresh token. Remove the app's access in your Google account "
+            "and connect again.")
     email = AuthorizedSession(creds).get(USERINFO_URL, timeout=30).json().get("email", "")
-    return email, creds.refresh_token or "", " ".join(creds.scopes or SCOPES)
+    return email, creds.refresh_token, " ".join(creds.scopes or SCOPES)
 
 
 def save_connection(session: Session, settings: Settings, email: str, refresh_token: str,
@@ -103,9 +122,15 @@ def make_http(session: Session, settings: Settings) -> GoogleHttp:
     if conn.status == "broken":
         raise GoogleAuthError(
             f"Google connection stopped working ({conn.last_error}). Open Settings and click Connect Google.")
+    try:
+        refresh_token = crypto.decrypt(settings.app_secret_key, conn.refresh_token_enc)
+    except InvalidToken as exc:
+        raise GoogleAuthError(
+            "The saved Google connection can't be read. APP_SECRET_KEY may have changed. "
+            "Connect Google again.") from exc
     creds = Credentials(
         token=None,
-        refresh_token=crypto.decrypt(settings.app_secret_key, conn.refresh_token_enc),
+        refresh_token=refresh_token,
         token_uri=TOKEN_URI,
         client_id=settings.google_client_id,
         client_secret=settings.google_client_secret,
