@@ -1,5 +1,6 @@
 """Daily job that sends every report that is due."""
 
+import logging
 from datetime import date
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -10,6 +11,8 @@ from clientreport.db import Client, ReportRun
 from clientreport.months import previous_month
 from clientreport.pipeline import Deps, send_report
 
+logger = logging.getLogger(__name__)
+
 DONE = ("sent", "failed")
 
 
@@ -19,7 +22,12 @@ def due_clients(session: Session, today: date) -> list[tuple[Client, str]]:
     for client in session.exec(select(Client).where(Client.enabled == True).order_by(Client.id)).all():  # noqa: E712
         if today.day < client.send_day:
             continue
-        send_date = date(today.year, today.month, client.send_day)
+        try:
+            send_date = date(today.year, today.month, client.send_day)
+        except ValueError:  # bad row (send_day below 1): skip it, never clamp it
+            logger.warning("Skipping client %s: send_day %s is not a valid day of the month",
+                           client.id, client.send_day)
+            continue
         if client.enabled_at is None or client.enabled_at > send_date:
             continue
         run = session.exec(
@@ -35,8 +43,15 @@ def run_due_reports(engine, deps: Deps) -> list[tuple[int, str, str]]:
     results = []
     with Session(engine, expire_on_commit=False) as session:
         for client, period in due_clients(session, deps.today()):
-            run = send_report(session, client, period, deps)
-            results.append((client.id, period, run.status))
+            client_id = client.id
+            try:
+                run = send_report(session, client, period, deps)
+            except Exception:  # one bad client must never stop the other clients' reports
+                logger.exception("Daily run failed for client %s, %s; continuing with the other clients",
+                                 client_id, period)
+                session.rollback()  # a database error leaves the session unusable until rolled back
+                continue
+            results.append((client_id, period, run.status))
     return results
 
 
