@@ -98,7 +98,9 @@ def finish_flow(settings: Settings, state: str, code_verifier: str,
             "Google did not return a refresh token. Remove the app's access in your Google account "
             "and connect again.")
     email = AuthorizedSession(creds).get(USERINFO_URL, timeout=30).json().get("email", "")
-    return email, creds.refresh_token, " ".join(creds.scopes or SCOPES)
+    # creds.scopes is what we asked for; granted_scopes is what Google actually granted (None if it sent no scope field)
+    granted = creds.granted_scopes if creds.granted_scopes is not None else (creds.scopes or SCOPES)
+    return email, creds.refresh_token, " ".join(granted)
 
 
 def save_connection(session: Session, settings: Settings, email: str, refresh_token: str,

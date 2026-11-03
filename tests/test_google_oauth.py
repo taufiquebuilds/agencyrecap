@@ -115,6 +115,58 @@ class FakeFlow:
         pass
 
 
+ALL_SCOPES = [
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/analytics.readonly",
+    "https://www.googleapis.com/auth/webmasters.readonly",
+]
+ANALYTICS = "https://www.googleapis.com/auth/analytics.readonly"
+
+
+class ScopedFlow:
+    """Credentials like google-auth-oauthlib builds: scopes is what was requested, granted_scopes what Google gave."""
+
+    def __init__(self, granted):
+        self.credentials = type("C", (), {
+            "refresh_token": "refresh-1", "scopes": ALL_SCOPES, "granted_scopes": granted})()
+
+    def fetch_token(self, authorization_response):
+        pass
+
+
+class FakeUserinfoSession:
+    def __init__(self, creds):
+        pass
+
+    def get(self, url, timeout):
+        return Resp(200, {"email": "me@agency.com"})
+
+
+def _run_finish_flow(settings, monkeypatch, granted):
+    monkeypatch.setattr(google_oauth, "_flow", lambda *a, **k: ScopedFlow(granted))
+    monkeypatch.setattr(google_oauth, "AuthorizedSession", FakeUserinfoSession)
+    return finish_flow(settings, "state", "verifier", "http://localhost:8000/cb?code=c")
+
+
+def test_finish_flow_reports_the_scopes_google_granted_not_the_requested_ones(settings, monkeypatch):
+    granted = ["openid", "https://www.googleapis.com/auth/userinfo.email"]
+    email, refresh_token, scopes = _run_finish_flow(settings, monkeypatch, granted)
+    assert (email, refresh_token) == ("me@agency.com", "refresh-1")
+    assert ANALYTICS not in scopes.split()
+    assert scopes.split() == granted
+
+
+def test_finish_flow_returns_all_scopes_when_all_were_granted(settings, monkeypatch):
+    _, _, scopes = _run_finish_flow(settings, monkeypatch, list(ALL_SCOPES))
+    assert scopes.split() == ALL_SCOPES
+
+
+def test_finish_flow_falls_back_to_requested_scopes_when_google_sent_no_scope_field(settings, monkeypatch):
+    _, _, scopes = _run_finish_flow(settings, monkeypatch, None)
+    assert scopes.split() == ALL_SCOPES
+
+
 def test_finish_flow_requires_a_refresh_token(settings, monkeypatch):
     monkeypatch.setattr(google_oauth, "_flow", lambda *a, **k: FakeFlow(None))
     with pytest.raises(GoogleAuthError, match="did not return a refresh token"):
