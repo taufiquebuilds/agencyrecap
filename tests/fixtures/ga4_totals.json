@@ -1,0 +1,8 @@
+{
+  "dimensionHeaders": [{"name": "dateRange"}],
+  "metricHeaders": [{"name": "sessions", "type": "TYPE_INTEGER"}, {"name": "keyEvents", "type": "TYPE_FLOAT"}],
+  "rows": [
+    {"dimensionValues": [{"value": "current"}], "metricValues": [{"value": "1200"}, {"value": "48"}]},
+    {"dimensionValues": [{"value": "previous"}], "metricValues": [{"value": "1100"}, {"value": "40"}]}
+  ]
+}

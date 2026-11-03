@@ -1,0 +1,6 @@
+{
+  "siteEntry": [
+    {"siteUrl": "sc-domain:acme.com", "permissionLevel": "siteOwner"},
+    {"siteUrl": "https://old.acme.com/", "permissionLevel": "siteUnverifiedUser"}
+  ]
+}

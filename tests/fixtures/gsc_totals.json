@@ -1,0 +1,4 @@
+{
+  "2026-10-01": {"rows": [{"clicks": 500, "impressions": 21000, "ctr": 0.0238, "position": 12.4}], "responseAggregationType": "byProperty"},
+  "2026-09-01": {"rows": [{"clicks": 400, "impressions": 18000, "ctr": 0.0222, "position": 13.1}], "responseAggregationType": "byProperty"}
+}

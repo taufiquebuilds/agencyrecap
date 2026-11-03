@@ -1,0 +1,12 @@
+{
+  "accountSummaries": [
+    {
+      "account": "accounts/1",
+      "displayName": "Acme Ltd",
+      "propertySummaries": [
+        {"property": "properties/111", "displayName": "acme.com"},
+        {"property": "properties/222", "displayName": "Acme Blog"}
+      ]
+    }
+  ]
+}

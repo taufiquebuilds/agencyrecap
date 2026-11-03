@@ -1,0 +1,9 @@
+{
+  "rows": [
+    {"keys": ["2025-10-01"], "clicks": 100, "impressions": 5000, "ctr": 0.02, "position": 15.0},
+    {"keys": ["2026-09-01"], "clicks": 300, "impressions": 9000, "ctr": 0.0333, "position": 13.0},
+    {"keys": ["2026-09-15"], "clicks": 100, "impressions": 9000, "ctr": 0.0111, "position": 13.2},
+    {"keys": ["2026-10-01"], "clicks": 250, "impressions": 10500, "ctr": 0.0238, "position": 12.4},
+    {"keys": ["2026-10-02"], "clicks": 250, "impressions": 10500, "ctr": 0.0238, "position": 12.4}
+  ]
+}

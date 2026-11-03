@@ -1,0 +1,9 @@
+{
+  "rows": [
+    {"dimensionValues": [{"value": "Organic Search"}], "metricValues": [{"value": "620"}]},
+    {"dimensionValues": [{"value": "Direct"}], "metricValues": [{"value": "310"}]},
+    {"dimensionValues": [{"value": "Paid Search"}], "metricValues": [{"value": "150"}]},
+    {"dimensionValues": [{"value": "Referral"}], "metricValues": [{"value": "80"}]},
+    {"dimensionValues": [{"value": "Organic Social"}], "metricValues": [{"value": "40"}]}
+  ]
+}

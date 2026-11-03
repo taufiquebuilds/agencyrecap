@@ -1,0 +1,6 @@
+{
+  "rows": [
+    {"keys": ["https://acme.com/"], "clicks": 300, "impressions": 9000, "ctr": 0.0333, "position": 5.0},
+    {"keys": ["https://acme.com/widgets"], "clicks": 150, "impressions": 7000, "ctr": 0.0214, "position": 9.8}
+  ]
+}
