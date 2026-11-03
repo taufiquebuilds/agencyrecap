@@ -1,3 +1,5 @@
+import ssl
+
 import pytest
 
 from clientreport.mail import SmtpConfig, build_message, send
@@ -19,8 +21,9 @@ def test_build_message_with_pdf():
 class FakeSMTP:
     instances: list["FakeSMTP"] = []
 
-    def __init__(self, host, port, timeout):
-        self.host, self.port, self.calls = host, port, []
+    def __init__(self, host, port, timeout, context=None):
+        self.host, self.port, self.context, self.calls = host, port, context, []
+        self.starttls_context = None
         FakeSMTP.instances.append(self)
 
     def __enter__(self):
@@ -29,7 +32,8 @@ class FakeSMTP:
     def __exit__(self, *exc):
         return False
 
-    def starttls(self):
+    def starttls(self, context=None):
+        self.starttls_context = context
         self.calls.append("starttls")
 
     def login(self, user, password):
@@ -44,6 +48,26 @@ def test_send_uses_starttls_and_login():
     msg = build_message(from_email="r@a.com", to=["x@y.com"], subject="Hi", text="t")
     send(msg, SmtpConfig("smtp.example.com", 587, "user", "pw", "r@a.com"), smtp_factory=FakeSMTP)
     assert FakeSMTP.instances[0].calls == ["starttls", ("login", "user"), ("send", "Hi")]
+
+
+def test_send_verifies_certificate_on_starttls():
+    FakeSMTP.instances.clear()
+    msg = build_message(from_email="r@a.com", to=["x@y.com"], subject="Hi", text="t")
+    send(msg, SmtpConfig("smtp.example.com", 587, "user", "pw", "r@a.com"), smtp_factory=FakeSMTP)
+    context = FakeSMTP.instances[0].starttls_context
+    assert isinstance(context, ssl.SSLContext)
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.check_hostname is True
+
+
+def test_send_verifies_certificate_on_implicit_tls():
+    FakeSMTP.instances.clear()
+    msg = build_message(from_email="r@a.com", to=["x@y.com"], subject="Hi", text="t")
+    send(msg, SmtpConfig("smtp.example.com", 465, "user", "pw", "r@a.com"), smtp_factory=FakeSMTP)
+    context = FakeSMTP.instances[0].context
+    assert isinstance(context, ssl.SSLContext)
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.check_hostname is True
 
 
 def test_send_without_host_fails():

@@ -1,6 +1,7 @@
 """Build and send emails over SMTP."""
 
 import smtplib
+import ssl
 from dataclasses import dataclass
 from email.message import EmailMessage
 
@@ -34,10 +35,12 @@ def build_message(*, from_email: str, to: list[str], subject: str, text: str, ht
 def send(message: EmailMessage, config: SmtpConfig, smtp_factory=None) -> None:
     if not config.host:
         raise OSError("SMTP_HOST is not set, so email cannot be sent")
+    context = ssl.create_default_context()
     factory = smtp_factory or (smtplib.SMTP_SSL if config.port == 465 else smtplib.SMTP)
-    with factory(config.host, config.port, timeout=30) as smtp:
+    options = {"context": context} if config.port == 465 else {}
+    with factory(config.host, config.port, timeout=30, **options) as smtp:
         if config.port == 587:
-            smtp.starttls()
+            smtp.starttls(context=context)
         if config.user:
             smtp.login(config.user, config.password)
         smtp.send_message(message)
