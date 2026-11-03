@@ -7,6 +7,11 @@ from sqlmodel import Session
 from clientreport import google_oauth
 from clientreport.routes.common import db, error_page, require_login
 
+REQUIRED_SCOPES = {
+    "https://www.googleapis.com/auth/analytics.readonly",
+    "https://www.googleapis.com/auth/webmasters.readonly",
+}
+
 router = APIRouter(dependencies=[Depends(require_login)])
 
 
@@ -35,11 +40,12 @@ def google_callback(request: Request, session: Session = Depends(db)):
         email, refresh_token, scopes = google_oauth.finish_flow(settings, state, verifier, callback_url)
     except Exception as exc:  # oauthlib raises many error types; show the message
         return error_page(request, f"Google sign-in failed: {exc}", 502)
-    if not refresh_token:
+    granted = set(scopes.split())
+    if not REQUIRED_SCOPES <= granted:
         return error_page(
             request,
-            "Google did not return a refresh token. Remove this app at "
-            "myaccount.google.com/permissions, then click Connect Google again.",
+            "Google sign-in is missing access to Analytics or Search Console. "
+            "Connect again and tick every box.",
         )
     google_oauth.save_connection(session, settings, email, refresh_token, scopes)
     return RedirectResponse("/settings?connected=1", status_code=303)

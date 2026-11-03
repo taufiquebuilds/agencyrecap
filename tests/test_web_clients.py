@@ -1,3 +1,4 @@
+import re
 from datetime import date
 
 from fastapi.testclient import TestClient
@@ -8,6 +9,13 @@ from clientreport.db import Client
 
 GOOD = {"name": "Acme Ltd", "recipients": "ceo@acme.com", "ga4_property_id": "111",
         "gsc_site_url": "sc-domain:acme.com", "send_day": "4"}
+
+
+def selected_option(html: str, select_id: str) -> str | None:
+    """The value of the selected <option> in the named <select>, or None."""
+    block = re.search(rf'<select id="{select_id}".*?</select>', html, re.S).group(0)
+    match = re.search(r'<option value="([^"]*)"\s+selected', block)
+    return match.group(1) if match else None
 
 
 def get_client(app) -> Client:
@@ -150,3 +158,61 @@ def test_client_routes_need_login(app):
                              ("get", "/clients/1/preview"), ("post", "/clients/1/send")]:
             r = getattr(anon, method)(path, follow_redirects=False)
             assert (r.status_code, r.headers["location"]) == (303, "/login"), path
+
+
+def make_client(app, **overrides) -> int:
+    values = dict(name="Acme Ltd", recipients="ceo@acme.com", ga4_property_id="111",
+                  gsc_site_url="sc-domain:acme.com", send_day=4) | overrides
+    with Session(app.state.engine) as session:
+        client = Client(**values)
+        session.add(client)
+        session.commit()
+        return client.id
+
+
+def test_edit_keeps_saved_sources_that_are_not_listed(web, app):
+    client_id = make_client(app, ga4_property_id="999", gsc_site_url="https://gone.example/")
+    r = web.get(f"/clients/{client_id}/edit")
+    assert selected_option(r.text, "ga4_property_id") == "999"
+    assert selected_option(r.text, "gsc_site_url") == "https://gone.example/"
+    assert "999 (not visible to the connected Google account)" in r.text
+    assert "https://gone.example/ (not visible to the connected Google account)" in r.text
+
+
+def test_edit_selects_saved_sources_that_are_listed(web, app):
+    client_id = make_client(app, ga4_property_id="222")
+    r = web.get(f"/clients/{client_id}/edit")
+    assert selected_option(r.text, "ga4_property_id") == "222"
+    assert selected_option(r.text, "gsc_site_url") == "sc-domain:acme.com"
+    assert "not visible to the connected Google account" not in r.text
+
+
+def test_new_client_form_selects_the_empty_choice(web):
+    r = web.get("/clients/new")
+    assert selected_option(r.text, "ga4_property_id") == ""
+    assert selected_option(r.text, "gsc_site_url") == ""
+    r = web.post("/clients", data={**GOOD, "ga4_property_id": "", "gsc_site_url": ""})
+    assert r.status_code == 422
+    assert "Choose a GA4 property" in r.text
+
+
+def test_client_form_rejects_control_characters(web, app):
+    r = web.post("/clients", data={**GOOD, "recipients": "ceo@acme.com,\r\nBcc: x@evil.com"})
+    assert r.status_code == 422
+    assert "control characters" in r.text
+    r = web.post("/clients", data={**GOOD, "name": "Acme\nLtd"})
+    assert r.status_code == 422
+    assert "control characters" in r.text
+    r = web.post("/clients", data={**GOOD, "recipients": "ceo @acme.com"})
+    assert r.status_code == 422
+    assert "valid email" in r.text
+    with Session(app.state.engine) as session:
+        assert session.exec(select(Client)).all() == []
+
+
+def test_preview_survives_unexpected_errors(web, http):
+    web.post("/clients", data=GOOD)
+    http.fail = KeyError("boom")
+    r = web.get("/clients/1/preview")
+    assert r.status_code == 500
+    assert "The preview could not be built. Check the server log." in r.text

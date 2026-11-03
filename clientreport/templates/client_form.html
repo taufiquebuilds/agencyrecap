@@ -13,6 +13,9 @@
   <label for="ga4_property_id">GA4 property</label>
   {% if properties %}
   <select id="ga4_property_id" name="ga4_property_id">
+    {% set saved_ids = properties | map(attribute="id") | list %}
+    <option value="" {{ "selected" if not values.ga4_property_id }}>Choose…</option>
+    {% if values.ga4_property_id and values.ga4_property_id not in saved_ids %}<option value="{{ values.ga4_property_id }}" selected>{{ values.ga4_property_id }} (not visible to the connected Google account)</option>{% endif %}
     {% for p in properties %}<option value="{{ p.id }}" {{ "selected" if p.id == values.ga4_property_id }}>{{ p.name }}</option>{% endfor %}
   </select>
   {% else %}
@@ -22,6 +25,9 @@
   <label for="gsc_site_url">Search Console site</label>
   {% if sites %}
   <select id="gsc_site_url" name="gsc_site_url">
+    {% set site_ids = sites | map(attribute="id") | list %}
+    <option value="" {{ "selected" if not values.gsc_site_url }}>Choose…</option>
+    {% if values.gsc_site_url and values.gsc_site_url not in site_ids %}<option value="{{ values.gsc_site_url }}" selected>{{ values.gsc_site_url }} (not visible to the connected Google account)</option>{% endif %}
     {% for s in sites %}<option value="{{ s.id }}" {{ "selected" if s.id == values.gsc_site_url }}>{{ s.name }}</option>{% endfor %}
   </select>
   {% else %}

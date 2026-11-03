@@ -1,5 +1,7 @@
 """Add and edit clients, preview reports and send them."""
 
+import logging
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import RedirectResponse, Response
@@ -10,8 +12,9 @@ from clientreport.connectors.base import SourceError
 from clientreport.db import Client, ReportRun
 from clientreport.months import label, previous_month
 from clientreport.pipeline import build_report, send_report
-from clientreport.routes.common import db, error_page, render, require_login
+from clientreport.routes.common import db, error_page, has_control_chars, render, require_login
 
+logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(require_login)])
 
 FIELDS = ("name", "recipients", "ga4_property_id", "gsc_site_url", "send_day")
@@ -41,8 +44,10 @@ def _read(form) -> dict:
 def _validate(values: dict) -> str | None:
     if not values["name"]:
         return "Client name is required."
+    if has_control_chars(values["name"]) or has_control_chars(values["recipients"]):
+        return "Client name and email addresses must not contain line breaks or control characters."
     emails = [e.strip() for e in values["recipients"].split(",") if e.strip()]
-    if not emails or any("@" not in e for e in emails):
+    if not emails or any("@" not in e or any(ch.isspace() for ch in e) for e in emails):
         return "Enter at least one valid email address."
     if not values["ga4_property_id"] or not values["gsc_site_url"]:
         return "Choose a GA4 property and a Search Console site."
@@ -126,6 +131,9 @@ async def preview(request: Request, client_id: int, session: Session = Depends(d
         report = await run_in_threadpool(build_report, session, client, period, deps)
     except SourceError as exc:
         return error_page(request, f"Could not build the report: {exc}", 502)
+    except Exception:
+        logger.exception("Preview failed for client %s", client_id)
+        return error_page(request, "The preview could not be built. Check the server log.", 500)
     return Response(report.pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="preview-{period}.pdf"'})
 

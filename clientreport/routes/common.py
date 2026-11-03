@@ -26,3 +26,8 @@ def render(request: Request, name: str, status_code: int = 200, **context):
 
 def error_page(request: Request, message: str, status_code: int = 400):
     return render(request, "error.html", status_code=status_code, message=message)
+
+
+def has_control_chars(value: str) -> bool:
+    """True for CR, LF, tabs and any other ASCII control character (which break mail headers)."""
+    return any(ord(ch) < 32 or ord(ch) == 127 for ch in value)

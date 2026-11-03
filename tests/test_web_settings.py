@@ -6,6 +6,7 @@ from sqlmodel import Session
 from clientreport import google_oauth
 from clientreport.db import get_agency, get_google
 
+FULL_SCOPES = " ".join(google_oauth.SCOPES)
 FORM = {"name": "Our Agency", "accent_hex": "#1f7a4d", "owner_email": "owner@agency.com",
         "reply_to": "hello@agency.com", "footer": "Our Agency · hello@agency.com"}
 
@@ -22,6 +23,27 @@ def test_bad_colour_is_rejected(web):
     r = web.post("/settings", data={**FORM, "accent_hex": "green"})
     assert r.status_code == 422
     assert "Accent colour must look like" in r.text
+
+
+def test_validation_error_keeps_typed_values(web):
+    r = web.post("/settings", data={**FORM, "name": "New Agency", "accent_hex": "green", "footer": "Typed footer"})
+    assert r.status_code == 422
+    assert 'value="New Agency"' in r.text
+    assert 'value="Typed footer"' in r.text
+    assert 'value="green"' in r.text
+
+
+def test_settings_reject_control_characters(web, app):
+    r = web.post("/settings", data={**FORM, "reply_to": "hello@agency.com\r\nBcc: x@evil.com"})
+    assert r.status_code == 422
+    assert "control characters" in r.text
+    r = web.post("/settings", data={**FORM, "owner_email": "own er@agency.com"})
+    assert r.status_code == 422
+    assert "valid email" in r.text
+    r = web.post("/settings", data={**FORM, "name": "Our\nAgency"})
+    assert r.status_code == 422
+    with Session(app.state.engine) as session:
+        assert get_agency(session).owner_email != "own er@agency.com"
 
 
 def test_logo_upload(web, settings):
@@ -53,7 +75,7 @@ def test_logo_stored_name_ignores_uploaded_filename(web, app, settings):
 
 def test_connect_google(web, app, monkeypatch):
     monkeypatch.setattr(google_oauth, "finish_flow",
-                        lambda settings, state, verifier, url: ("me@agency.com", "refresh-1", "openid"))
+                        lambda settings, state, verifier, url: ("me@agency.com", "refresh-1", FULL_SCOPES))
     r = web.get("/auth/google/start", follow_redirects=False)
     assert r.status_code == 303
     assert r.headers["location"].startswith("https://accounts.google.com/")
@@ -63,6 +85,18 @@ def test_connect_google(web, app, monkeypatch):
     with Session(app.state.engine) as session:
         assert get_google(session).email == "me@agency.com"
     assert "me@agency.com" in web.get("/settings").text
+
+
+def test_callback_requires_analytics_and_search_console_scopes(web, app, monkeypatch):
+    monkeypatch.setattr(google_oauth, "finish_flow",
+                        lambda settings, state, verifier, url: ("me@agency.com", "refresh-1", "openid"))
+    r = web.get("/auth/google/start", follow_redirects=False)
+    state = parse_qs(urlparse(r.headers["location"]).query)["state"][0]
+    r = web.get(f"/auth/google/callback?state={state}&code=abc", follow_redirects=False)
+    assert r.status_code == 400
+    assert "missing access to Analytics or Search Console" in r.text
+    with Session(app.state.engine) as session:
+        assert get_google(session) is None
 
 
 def test_callback_with_wrong_state(web):
